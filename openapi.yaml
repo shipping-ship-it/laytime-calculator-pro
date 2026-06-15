@@ -1,0 +1,143 @@
+openapi: 3.1.0
+info:
+  title: Laytime Calculator Pro API
+  version: "1.0.0"
+  description: >-
+    AI-powered laytime, demurrage and despatch calculation for ship chartering.
+    Submit a Charter Party, Fixture Recap, Notice of Readiness (NOR) or Statement
+    of Facts (SoF) as plain text and/or base64-encoded files, and receive a full,
+    auditable laytime statement with the demurrage / despatch settlement.
+    API keys are issued after sign-up; each successful request consumes one
+    calculation from your plan.
+  contact:
+    name: AGRIX / Navitt
+    email: shipping@agrix.world
+    url: https://navitt.com
+  x-pricing-url: https://navitt-mcp.marine-356.workers.dev/authorize
+
+servers:
+  - url: https://navitt-mcp.marine-356.workers.dev
+    description: Production
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/calculate:
+    post:
+      operationId: calculateLaytime
+      summary: Calculate laytime, demurrage and despatch
+      description: >-
+        Provide `text`, `documents`, or both. Returns the full laytime
+        statement and the number of calculations remaining on your plan.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculateRequest"
+            examples:
+              text:
+                summary: Plain-text input
+                value:
+                  text: >-
+                    NOR tendered 01 Jun 08:00. Loading 01 Jun 12:00 to 03 Jun
+                    18:00. Laytime allowed 3 days SHINC. Demurrage USD 10000/day.
+                    Despatch half demurrage.
+              document:
+                summary: A single PDF document
+                value:
+                  documents:
+                    - mimeType: application/pdf
+                      data: JVBERi0xLjQKJ...
+                  instructions: "SHINC. Demurrage USD 12,000/day."
+      responses:
+        "200":
+          description: Successful calculation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalculateResponse"
+        "400":
+          description: Body is not valid JSON, or neither text nor documents supplied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid x-api-key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "402":
+          description: Calculation quota exhausted (NO_CREDITS)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: Calculation engine error, retry later
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    CalculateRequest:
+      type: object
+      description: At least one of `text` or `documents` must be provided.
+      properties:
+        text:
+          type: string
+          description: Plain-text input, e.g. a pasted fixture recap or SoF.
+        documents:
+          type: array
+          description: Document files, base64-encoded.
+          items:
+            $ref: "#/components/schemas/Document"
+        instructions:
+          type: string
+          description: Optional extra instructions, e.g. "SHEX applies. Rate USD 3,500/day".
+      anyOf:
+        - required: [text]
+        - required: [documents]
+
+    Document:
+      type: object
+      required: [mimeType, data]
+      properties:
+        mimeType:
+          type: string
+          description: MIME type of the file.
+          examples: ["application/pdf", "image/png", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+        data:
+          type: string
+          description: Base64-encoded file content.
+
+    CalculateResponse:
+      type: object
+      required: [result, remaining]
+      properties:
+        result:
+          type: string
+          description: The full, auditable laytime statement and demurrage/despatch settlement.
+        remaining:
+          type: integer
+          description: Number of calculations left on your plan.
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code or message (e.g. NO_CREDITS).
